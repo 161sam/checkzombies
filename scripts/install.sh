@@ -90,8 +90,7 @@ need_cmd install
 need_cmd uname
 
 tmp="$(mktemp -d)"
-cleanup() { rm -rf "$tmp"; }
-trap cleanup EXIT
+trap 'rm -rf "$tmp"' EXIT
 
 api_base="https://api.github.com/repos/${REPO}/releases"
 if [[ "${TAG}" == "latest" ]]; then
@@ -103,9 +102,8 @@ else
 fi
 
 asset_url() {
-  local name="$1"
   # extract browser_download_url for asset by name
-  python3 - <<PY 2>/dev/null || true
+  python3 - "$1" <<PY 2>/dev/null || true
 import json,sys
 j=json.load(open("${rel_json}"))
 for a in j.get("assets",[]):
@@ -180,9 +178,11 @@ verify_asset() {
 
 run() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    echo "[dry-run] $*"
+    printf '[dry-run]'
+    printf ' %q' "$@"
+    printf '\n'
   else
-    eval "$@"
+    "$@"
   fi
 }
 
@@ -199,8 +199,8 @@ if [[ "$METHOD" == "single" ]]; then
     exit 1
   fi
 
-  run "install -d -m 0755 '${BIN_DIR}'"
-  run "install -m 0755 '${tmp}/${single_name}' '${BIN_DIR}/checkzombies'"
+  run install -d -m 0755 "${BIN_DIR}"
+  run install -m 0755 "${tmp}/${single_name}" "${BIN_DIR}/checkzombies"
 
   echo "Installed: ${BIN_DIR}/checkzombies"
   echo "Verify:   checkzombies --version"
@@ -220,10 +220,10 @@ if [[ "$METHOD" == "deb" ]]; then
     exit 1
   fi
 
-  run "dpkg -i '${tmp}/${deb_name}' || true"
+  run dpkg -i "${tmp}/${deb_name}" || true
   # attempt to fix deps if apt is available
   if command -v apt-get >/dev/null 2>&1; then
-    run "apt-get -y -f install"
+    run apt-get -y -f install
   fi
 
   echo "Installed via .deb."

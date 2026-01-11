@@ -401,9 +401,8 @@ print_zombies() {
 
 parent_has_zombies() {
     local ppid=$1
-    local entry_pid entry_ppid entry_state entry_cmd
 
-    while IFS=, read -r entry_pid entry_ppid entry_state entry_cmd; do
+    while IFS=, read -r _ entry_ppid _ _; do
         if [[ "$entry_ppid" == "$ppid" ]]; then
             return 0
         fi
