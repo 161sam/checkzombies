@@ -24,16 +24,30 @@ Automatisch alle Zombie-Parent-Prozesse terminieren
 Nur Zombies auflisten (keine Interaktion)
 .TP
 .B \-w, \-\-watch
-Kontinuierliche Überwachung alle 10 Sekunden
+Kontinuierliche \[:U00FC]berwachung alle 10 Sekunden
 .TP
 .B \-f, \-\-force
-Aggressives KILL ohne Bestätigung (GEFÄHRLICH!)
+Aggressives KILL ohne Best\[:U00E4]tigung (GEF\[:U00C4]HRLICH!). Nicht mit \-\-list kombinierbar.
+.TP
+.B \-\-
+Ende der Optionen
+
+.SH EXIT STATUS
+.TP
+.B 0
+Keine Zombies gefunden oder erfolgreiche Bereinigung
+.TP
+.B 1
+Fehler (z.B. ung\[:U00FC]ltige Option oder interner Fehler)
+.TP
+.B 2
+Zombies gefunden, aber nicht bereinigt (z.B. Nutzer abgebrochen)
 
 .SH BEISPIELE
 .IP
 checkzombies
 .br
-Interaktives Menü mit Zombie-Auswahl
+Interaktives Men\[:U00FC] mit Zombie-Auswahl (nur bei TTY)
 .IP
 checkzombies --auto
 .br
@@ -43,12 +57,12 @@ checkzombies --list | less
 .br
 Nur Zombie-Liste als Text
 .IP
-watch -n 5 checkzombies --list
+checkzombies --watch
 .br
-Live-Überwachung alle 5 Sekunden
+Live-\[:U00DC]berwachung alle 10 Sekunden
 
 .SH FILES
-/home/dev/checkzombies.log
+$HOME/checkzombies.log
 .br
 Logfile mit allen Aktionen
 
