@@ -26,10 +26,35 @@ man checkzombies  # Man-Page!
 
     📦 Debian/RPM Packages
 
-## 📖 Vollständige Dokumentation
+## 📦 Installation
+
+### Option A (empfohlen): Release Single-File (verifiziert)
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install.sh | sudo REPO=<owner>/<repo> bash
+````
+
+### Option B: Release .deb (verifiziert)
 
 ```bash
-man checkzombies
+curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install.sh | sudo REPO=<owner>/<repo> bash -s -- --method deb
+```
+
+### Version pinnen
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install.sh | sudo REPO=<owner>/<repo> bash -s -- --version v1.0.0
+```
+
+## 🔐 APT Repo (signiert, ab v2.0)
+
+```bash
+curl -fsSL https://<owner>.github.io/<repo>/apt/checkzombies-archive-keyring.gpg \
+  | sudo tee /usr/share/keyrings/checkzombies-archive-keyring.gpg >/dev/null
+
+echo "deb [signed-by=/usr/share/keyrings/checkzombies-archive-keyring.gpg] https://<owner>.github.io/<repo>/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/checkzombies.list
+
+sudo apt update && sudo apt install checkzombies
 ```
 
 ## 🔚 Exit-Codes
