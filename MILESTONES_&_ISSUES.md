@@ -256,22 +256,7 @@
 
 ---
 
-# 🟡 Milestone: **v2.0.0 – Cross-Platform / Homebrew**
-
-### Issue #14 – Abstract platform-specific behavior
-
-* GNU vs BSD `ps`
-* systemd optional
-
-### Issue #15 – Homebrew formula
-
-* `brew install checkzombies`
-
-### Issue #16 – macOS CI smoke tests
-
----
-
-# 🔵 Milestone: **v3.0.0 – Zombies + Memory + TUI**
+# 🟡 Milestone: **v2.0.0 – Zombies + Memory + TUI**
 
 ---
 
@@ -279,7 +264,7 @@
 
 ### Issue #17 – Implement `--memory` auto-backend
 
-**Labels:** `memory`, `v3.0`
+**Labels:** `memory`, `v2.0`
 
 * Auto-detect: `smem → ps_mem → ps`
 * read-only
@@ -299,7 +284,7 @@
 
 ### Issue #20 – Minimal ANSI TUI (`--tui`)
 
-**Labels:** `tui`, `v3.0`
+**Labels:** `tui`, `v2.0`
 
 * ANSI-Render-Loop
 * Header + Zombie-Table
@@ -310,7 +295,7 @@
 
 ### Issue #21 – Advanced htop-style TUI
 
-**Labels:** `tui`, `v3.0`
+**Labels:** `tui`, `v2.0`
 
 * Scrolling (↑↓)
 * Sorting (CPU/MEM)
@@ -321,7 +306,7 @@
 
 ### Issue #22 – Unified Full-Check TUI
 
-**Labels:** `tui`, `memory`, `v3.0`
+**Labels:** `tui`, `memory`, `v2.0`
 
 * Zombies + Memory
 * Toggle views
@@ -329,18 +314,35 @@
 
 ---
 
-## 🧪 Tests & Doku (v3)
+## 🧪 Tests & Doku (v2)
 
 ### Issue #23 – TUI safety & restore tests
 
 * Terminal state always restored
 
-### Issue #24 – Update Manpage + README for v3
+### Issue #24 – Update Manpage + README for v2
 
 * Memory + TUI Optionen
 * Feature comparison table
 
 ---
+
+
+# 🔵 **MAIBE FUTURE** Milestone: **v3.0.0 – Cross-Platform / Homebrew**
+
+### Issue #14 – Abstract platform-specific behavior
+
+* GNU vs BSD `ps`
+* systemd optional
+
+### Issue #15 – Homebrew formula
+
+* `brew install checkzombies`
+
+### Issue #16 – macOS CI smoke tests
+
+---
+
 
 # 🧠 Strategische Notiz (für README / Maintainer)
 
