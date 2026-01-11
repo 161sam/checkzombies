@@ -31,3 +31,9 @@ man checkzombies  # Man-Page!
 ```bash
 man checkzombies
 ```
+
+## 🔚 Exit-Codes
+
+- `0`: keine Zombies gefunden oder erfolgreich bereinigt
+- `1`: Fehler (z. B. ungültige Option)
+- `2`: Zombies gefunden, aber nicht bereinigt

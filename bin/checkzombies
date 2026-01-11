@@ -4,77 +4,368 @@
 # Features: Logging, systemd-Check, sichere Signal-Eskalation, Batch-Modus
 # ═══════════════════════════════════════════════════════════════════════════════
 
+set -euo pipefail
+IFS=$'\n\t'
+
+VERSION="2.0"
 LOGFILE="${HOME}/checkzombies.log"
-DATE=$(date '+%Y-%m-%d %H:%M:%S')
+WATCH_INTERVAL_DEFAULT=10
 
-log() {
-    echo "[$DATE] $*" | tee -a "$LOGFILE" >&2
+MODE=""
+FORCE=0
+WATCH_INTERVAL=$WATCH_INTERVAL_DEFAULT
+
+action_log() {
+    local now
+    now=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$now] $*" | tee -a "$LOGFILE" >&2 || true
 }
 
-# Zombies finden (nur echte Zombies, CSV-Format)
+show_version() {
+    echo "checkzombies ${VERSION}"
+}
+
+short_usage() {
+    echo "Usage: checkzombies [--list|--auto|--watch] [--force]" >&2
+    echo "Try 'checkzombies --help' for more information." >&2
+}
+
+show_help() {
+    cat <<'HELP'
+checkzombies - Zombie-Prozess-Überwachung & Cleanup
+
+Usage:
+  checkzombies [OPTIONS]
+
+Modi (genau einer):
+  -l, --list       Nur Zombies auflisten (keine Interaktion)
+  -a, --auto       Automatische Bereinigung
+  -w, --watch      Kontinuierliche Überwachung (alle 10s)
+
+Optionen:
+  -f, --force      Aggressives Verhalten ohne Bestätigungen (nicht mit --list)
+  -h, --help       Hilfe anzeigen
+  -v, --version    Version anzeigen
+  --               Ende der Optionen
+
+Hinweis: Ohne Modus wird bei TTY das interaktive Menü geöffnet.
+Bei non-TTY wird automatisch --list verwendet.
+
+Exit-Codes: 0 = keine Zombies/erfolgreich bereinigt, 1 = Fehler,
+2 = Zombies gefunden, aber nicht bereinigt.
+HELP
+}
+
+set_mode() {
+    local requested=$1
+    if [[ -n "$MODE" ]]; then
+        echo "Error: only one mode can be selected." >&2
+        short_usage
+        exit 1
+    fi
+    MODE=$requested
+}
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -v|--version)
+                show_version
+                exit 0
+                ;;
+            -l|--list)
+                set_mode "list"
+                ;;
+            -a|--auto)
+                set_mode "auto"
+                ;;
+            -w|--watch)
+                set_mode "watch"
+                ;;
+            -f|--force)
+                FORCE=1
+                ;;
+            --)
+                shift
+                break
+                ;;
+            -* )
+                echo "Error: unknown option: $1" >&2
+                short_usage
+                exit 1
+                ;;
+            *)
+                echo "Error: unexpected argument: $1" >&2
+                short_usage
+                exit 1
+                ;;
+        esac
+        shift
+    done
+
+    if [[ -z "$MODE" ]]; then
+        if [[ -t 0 && -t 1 ]]; then
+            MODE="interactive"
+        else
+            MODE="list"
+            echo "Hinweis: kein TTY erkannt; wechsle zu --list." >&2
+        fi
+    fi
+
+    if [[ "$MODE" == "list" && "$FORCE" -eq 1 ]]; then
+        echo "Error: --force is not valid with --list." >&2
+        short_usage
+        exit 1
+    fi
+
+    if [[ "$MODE" == "watch" && "$FORCE" -eq 1 ]]; then
+        echo "Hinweis: --force hat im Watch-Modus keine Wirkung." >&2
+    fi
+}
+
 find_zombies() {
-    ps aux | awk '$8=="Z+" || $8=="Z" {print $2","$3","$8","$11,$12}' | \
-    grep -v '^$' || true
+    ps -eo pid=,ppid=,stat=,comm= | awk '$3 ~ /^Z/ {print $1","$2","$3","$4}'
 }
 
-main() {
-    local zombies count=0 zombie_list=""
+get_service() {
+    local ppid=$1
+    local status service
 
-    # 1. Zombies finden
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo "none"
+        return 0
+    fi
+
+    status=$(systemctl status "$ppid" 2>/dev/null || true)
+    if [[ -z "$status" ]]; then
+        echo "none"
+        return 0
+    fi
+
+    service=$(awk '/Main PID/ {print $3; exit}' <<<"$status")
+    echo "${service:-none}"
+}
+
+declare -a ZOMBIES=()
+
+collect_zombies() {
+    ZOMBIES=()
     while IFS=, read -r pid ppid state cmd; do
         [[ "$pid" =~ ^[0-9]+$ ]] || continue
-        service=$(systemctl status "$ppid" 2>/dev/null | grep "Main PID" | awk '{print $3}' | head -1 || echo "none")
-        zombie_list+="$pid,$ppid,$state,$cmd,$service"$'\n'
-        ((count++))
+        local service
+        service=$(get_service "$ppid")
+        ZOMBIES+=("$pid,$ppid,$state,$cmd,$service")
     done < <(find_zombies)
+}
 
-    # 2. KEINE Zombies = sauber beenden
-    if [ "$count" -eq 0 ]; then
+print_zombies() {
+    echo "PID    PPID   STAT  COMMAND                  SERVICE"
+    for entry in "${ZOMBIES[@]}"; do
+        IFS=, read -r pid ppid state cmd service <<<"$entry"
+        printf "%-6s %-6s %-5s %-20s %s\n" "$pid" "$ppid" "$state" "$cmd" "$service"
+    done
+}
+
+cleanup_parent() {
+    local ppid=$1
+    local service=$2
+    local signal="-TERM"
+
+    if [[ "$FORCE" -eq 1 ]]; then
+        signal="-KILL"
+    fi
+
+    if kill "$signal" "$ppid" 2>/dev/null; then
+        echo "  → $signal an $ppid"
+    else
+        if kill -0 "$ppid" 2>/dev/null; then
+            echo "  → Parent $ppid konnte nicht beendet werden" >&2
+            return 1
+        fi
+        echo "  → Parent $ppid nicht mehr existent"
+    fi
+
+    if [[ "$service" != "none" ]]; then
+        if sudo systemctl restart "$service" 2>/dev/null; then
+            echo "  → Service $service restarted"
+        else
+            echo "  → Service $service restart fehlgeschlagen" >&2
+        fi
+    fi
+
+    return 0
+}
+
+cmd_list() {
+    collect_zombies
+
+    local count=${#ZOMBIES[@]}
+    if [[ "$count" -eq 0 ]]; then
         echo "✓ Keine Zombie-Prozesse aktiv"
         return 0
     fi
 
-    # 3. Zombies ANZEIGEN
-    log "=== $count Zombie-Prozesse gefunden ==="
-    echo "PID    PPID   STAT  COMMAND                  SERVICE"
-    echo -n "$zombie_list" | while IFS=, read -r pid ppid state cmd service; do
-        printf "%-6s %-6s %-5s %-20s %s\n" "$pid" "$ppid" "$state" "$cmd" "$service"
-    done
+    action_log "=== $count Zombie-Prozesse gefunden ==="
+    print_zombies
     echo
 
-    # 4. INTERAKTIV / AUTO
-    if [ "$1" = "--auto" ]; then
-        echo "$zombie_list" | while IFS=, read -r pid ppid state cmd service; do
-            echo "🔧 Behandle Zombie $pid (Parent: $ppid)"
-            kill -TERM "$ppid" 2>/dev/null && echo "  → SIGTERM an $ppid" || echo "  → Parent $ppid nicht mehr existent"
-            [[ "$service" != "none" ]] && sudo systemctl restart "$service" 2>/dev/null && echo "  → Service $service restarted"
-        done
+    return 2
+}
+
+cmd_auto() {
+    collect_zombies
+
+    local count=${#ZOMBIES[@]}
+    if [[ "$count" -eq 0 ]]; then
+        echo "✓ Keine Zombie-Prozesse aktiv"
         return 0
     fi
 
-    # INTERAKTIVES MENÜ
+    action_log "=== $count Zombie-Prozesse gefunden ==="
+    print_zombies
+    echo
+
+    local failures=0
+    for entry in "${ZOMBIES[@]}"; do
+        IFS=, read -r pid ppid _state _cmd service <<<"$entry"
+        echo "🔧 Behandle Zombie $pid (Parent: $ppid)"
+        if ! cleanup_parent "$ppid" "$service"; then
+            failures=$((failures + 1))
+        fi
+    done
+
+    if [[ "$failures" -gt 0 ]]; then
+        return 2
+    fi
+
+    return 0
+}
+
+cmd_interactive() {
+    collect_zombies
+
+    local count=${#ZOMBIES[@]}
+    if [[ "$count" -eq 0 ]]; then
+        echo "✓ Keine Zombie-Prozesse aktiv"
+        return 0
+    fi
+
+    action_log "=== $count Zombie-Prozesse gefunden ==="
+    print_zombies
+    echo
+
     echo "Optionen:"
     echo "  a) Alle Parents terminieren"
     echo "  i) Einzeln bearbeiten"
     echo "  q) Beenden"
-    read -r choice
+
+    local choice
+    if ! read -r choice; then
+        echo "❌ Keine Eingabe erhalten"
+        return 1
+    fi
 
     case "${choice,,}" in
         a)
-            echo "$zombie_list" | while IFS=, read -r pid ppid state cmd service; do
+            local failures=0
+            for entry in "${ZOMBIES[@]}"; do
+                IFS=, read -r pid ppid _state _cmd service <<<"$entry"
                 echo "🔧 Zombie $pid → kill $ppid"
-                kill -TERM "$ppid" 2>/dev/null || sudo kill -KILL "$ppid" 2>/dev/null
-                [[ "$service" != "none" ]] && sudo systemctl restart "$service" 2>/dev/null
-            done ;;
+                if ! cleanup_parent "$ppid" "$service"; then
+                    failures=$((failures + 1))
+                fi
+            done
+            if [[ "$failures" -gt 0 ]]; then
+                return 2
+            fi
+            return 0
+            ;;
         i)
-            echo "$zombie_list" | nl -nln | awk -F, '{print $1": PID "$2" <- PPID "$3" ("$5")"}'
-            read -r num
-            [[ "$num" =~ ^[0-9]+$ && "$num" -le "$count" ]] || { echo "❌ Ungültig"; return 1; }
-            zombie_line=$(echo "$zombie_list" | sed -n "${num}p")
-            IFS=, read -r pid ppid state cmd service <<< "$zombie_line"
-            echo "🔧 Zombie $pid → kill $ppid ($(systemctl status "$ppid" 2>/dev/null | head -1))"
-            read -r confirm && [[ "$confirm" =~ [Yy] ]] && kill -KILL "$ppid" 2>/dev/null ;;
-        *) echo "👋 Abgebrochen ($count Zombies)" ;;
+            local index=1
+            for entry in "${ZOMBIES[@]}"; do
+                IFS=, read -r pid ppid _state cmd service <<<"$entry"
+                echo "$index: PID $pid <- PPID $ppid ($cmd)"
+                index=$((index + 1))
+            done
+            local num
+            if ! read -r num; then
+                echo "❌ Keine Auswahl erhalten"
+                return 1
+            fi
+            if [[ ! "$num" =~ ^[0-9]+$ || "$num" -lt 1 || "$num" -gt "$count" ]]; then
+                echo "❌ Ungültig"
+                return 1
+            fi
+            local zombie_line=${ZOMBIES[$((num - 1))]}
+            IFS=, read -r pid ppid _state cmd service <<<"$zombie_line"
+            echo "🔧 Zombie $pid → kill $ppid"
+            if [[ "$FORCE" -ne 1 ]]; then
+                local confirm
+                if ! read -r confirm; then
+                    echo "❌ Keine Bestätigung erhalten"
+                    return 1
+                fi
+                if [[ ! "$confirm" =~ [Yy] ]]; then
+                    echo "👋 Abgebrochen ($count Zombies)"
+                    return 2
+                fi
+            fi
+            if ! cleanup_parent "$ppid" "$service"; then
+                return 2
+            fi
+            return 0
+            ;;
+        q)
+            echo "👋 Abgebrochen ($count Zombies)"
+            return 2
+            ;;
+        *)
+            echo "❌ Ungültig"
+            return 1
+            ;;
+    esac
+}
+
+cmd_watch() {
+    trap 'echo; echo "Überwachung beendet"; exit 0' INT TERM
+
+    while true; do
+        if cmd_list; then
+            :
+        else
+            local status=$?
+            if [[ "$status" -eq 1 ]]; then
+                return 1
+            fi
+        fi
+        sleep "$WATCH_INTERVAL"
+    done
+}
+
+main() {
+    parse_args "$@"
+
+    case "$MODE" in
+        list)
+            cmd_list
+            ;;
+        auto)
+            cmd_auto
+            ;;
+        watch)
+            cmd_watch
+            ;;
+        interactive)
+            cmd_interactive
+            ;;
+        *)
+            echo "Error: unknown mode $MODE" >&2
+            return 1
+            ;;
     esac
 }
 
