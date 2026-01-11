@@ -27,6 +27,32 @@ checkzombies ist **kein Spielzeug**, sondern ein **Linux‑Systemkommando**.
 
 ---
 
+Gerne — hier ist ein **präziser, professioneller Absatz**, der **Unix-würdig**, **Repo-tauglich** und **Agent-kompatibel** ist.
+Du kannst ihn **1:1** z. B. in `README.md` oder `AGENTS.md` einfügen.
+
+---
+
+### 🧭 Projekt-Roadmaps & Entwicklungsphasen
+
+Die Weiterentwicklung von **checkzombies** erfolgt **strikt roadmap-getrieben** und ist in **klar abgegrenzte Phasen** unterteilt.
+Jede Roadmap definiert **Scope, Prioritäten und harte Grenzen** für die jeweilige Entwicklungsstufe:
+
+* **`ROADMAP-v1-v2.md`**
+  Fokus auf den **stabilen Linux-Core (v1.x)**: korrektes CLI-Verhalten, Sicherheit, systemd-Integration, Tests und Packaging.
+  *Keine Power-Features, keine Plattform-Erweiterungen.*
+
+* **`ROADMAP-v2-v3.md`**
+  Erweiterung auf **Portabilität (v2.x)**: macOS/BSD-Kompatibilität, Homebrew-Distribution und saubere Feature-Degradation außerhalb von systemd.
+
+* **`ROADMAP-v3v.md`**
+  **Optionale Power-Features (v3.x)**: Memory-Analyse (`smem`/`ps_mem`), kombinierte Zombie-/Memory-Checks sowie htop-ähnliche TUI-Modi.
+  *Diese Phase darf den v1-Core niemals destabilisieren.*
+
+➡️ **Alle Issues, PRs und Agenten-Aufgaben müssen explizit einer dieser Roadmaps zugeordnet sein.**
+Änderungen außerhalb des definierten Scopes sind **nicht zulässig**.
+
+---
+
 ## 🗂️ Versions‑ & Feature‑Strategie
 
 ### v1.x — Linux‑first Core (STABILITÄT)
