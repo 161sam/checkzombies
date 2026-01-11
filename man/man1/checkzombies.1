@@ -81,6 +81,12 @@ $HOME/checkzombies.log
 .br
 Logfile mit allen Aktionen
 
+.SH SYSTEMD (OPTIONAL)
+Optional enthaltene systemd-Units starten checkzombies im Watch-Modus oder periodisch im Auto-Modus.
+Die Installationshilfe liegt in \fIscripts/systemd_install.sh\fR und kopiert die Unit-Files nach
+\fI/etc/systemd/system\fR.
+Root-Rechte sind erforderlich.
+
 .SH ENVIRONMENT
 .TP
 .B CHECKZOMBIES_LOG_FILE

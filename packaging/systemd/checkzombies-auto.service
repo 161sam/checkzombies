@@ -1,0 +1,18 @@
+[Unit]
+Description=checkzombies auto cleanup
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env checkzombies --auto --no-log-file
+User=root
+Environment=CHECKZOMBIES_LOG_SYSLOG=1
+Environment=CHECKZOMBIES_LOG_LEVEL=INFO
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectSystem=full
+RestrictRealtime=true
