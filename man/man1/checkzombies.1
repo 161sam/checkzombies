@@ -32,6 +32,18 @@ Erlaubt KILL nach TERM-Timeout (GEF\[:U00C4]HRLICH!). Nicht mit \-\-list kombini
 .B \-\-no\-unicode
 Erzwingt ASCII-Ausgabe (keine Unicode-Symbole)
 .TP
+.B \-\-log\-file \fIPFAD\fR
+Logdatei setzen (Standard: $HOME/checkzombies.log)
+.TP
+.B \-\-no\-log\-file
+Datei-Logging deaktivieren
+.TP
+.B \-\-log\-syslog
+Zus\[:U00E4]tzlich in syslog/journald loggen (via logger)
+.TP
+.B \-\-log\-level \fILEVEL\fR
+Log-Level setzen (DEBUG, INFO, WARN, ERROR)
+.TP
 .B \-\-
 Ende der Optionen
 
@@ -68,6 +80,17 @@ Live-\[:U00DC]berwachung alle 10 Sekunden
 $HOME/checkzombies.log
 .br
 Logfile mit allen Aktionen
+
+.SH ENVIRONMENT
+.TP
+.B CHECKZOMBIES_LOG_FILE
+Standard-Logdatei \[:U00FC]berschreiben
+.TP
+.B CHECKZOMBIES_LOG_LEVEL
+Default-Log-Level (DEBUG, INFO, WARN, ERROR)
+.TP
+.B CHECKZOMBIES_LOG_SYSLOG
+Syslog-Logging aktivieren (1=ja)
 
 .SH AUTHOR
 161sam <find.me@github>
