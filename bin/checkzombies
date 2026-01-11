@@ -10,6 +10,7 @@ IFS=$'\n\t'
 VERSION="2.0"
 LOGFILE="${HOME}/checkzombies.log"
 WATCH_INTERVAL_DEFAULT=10
+WAIT_SECONDS=3
 
 MODE=""
 FORCE=0
@@ -43,7 +44,7 @@ Modi (genau einer):
   -w, --watch      Kontinuierliche Überwachung (alle 10s)
 
 Optionen:
-  -f, --force      Aggressives Verhalten ohne Bestätigungen (nicht mit --list)
+  -f, --force      Erlaubt KILL nach TERM-Timeout (nicht mit --list)
   -h, --help       Hilfe anzeigen
   -v, --version    Version anzeigen
   --               Ende der Optionen
@@ -131,6 +132,10 @@ find_zombies() {
     ps -eo pid=,ppid=,stat=,comm= | awk '$3 ~ /^Z/ {print $1","$2","$3","$4}'
 }
 
+is_numeric() {
+    [[ "$1" =~ ^[0-9]+$ ]]
+}
+
 get_service() {
     local ppid=$1
     local status service
@@ -155,11 +160,31 @@ declare -a ZOMBIES=()
 collect_zombies() {
     ZOMBIES=()
     while IFS=, read -r pid ppid state cmd; do
-        [[ "$pid" =~ ^[0-9]+$ ]] || continue
+        is_numeric "$pid" || continue
+        is_numeric "$ppid" || continue
+        [[ "$pid" -gt 1 ]] || continue
+        [[ "$pid" -ne "$ppid" ]] || continue
         local service
         service=$(get_service "$ppid")
         ZOMBIES+=("$pid,$ppid,$state,$cmd,$service")
     done < <(find_zombies)
+}
+
+declare -a PARENTS=()
+declare -A PARENT_SERVICE=()
+
+collect_parents() {
+    PARENTS=()
+    PARENT_SERVICE=()
+
+    local entry pid ppid state cmd service
+    for entry in "${ZOMBIES[@]}"; do
+        IFS=, read -r pid ppid state cmd service <<<"$entry"
+        if [[ -z "${PARENT_SERVICE[$ppid]:-}" ]]; then
+            PARENT_SERVICE["$ppid"]=$service
+            PARENTS+=("$ppid")
+        fi
+    done
 }
 
 print_zombies() {
@@ -170,31 +195,126 @@ print_zombies() {
     done
 }
 
-cleanup_parent() {
+parent_has_zombies() {
+    local ppid=$1
+    local entry_pid entry_ppid entry_state entry_cmd
+
+    while IFS=, read -r entry_pid entry_ppid entry_state entry_cmd; do
+        if [[ "$entry_ppid" == "$ppid" ]]; then
+            return 0
+        fi
+    done < <(find_zombies)
+
+    return 1
+}
+
+wait_for_exit() {
+    local ppid=$1
+    local interval=0.5
+    local max_checks=$((WAIT_SECONDS * 2))
+    local i
+
+    for ((i = 0; i < max_checks; i++)); do
+        if ! kill -0 "$ppid" 2>/dev/null; then
+            return 0
+        fi
+        sleep "$interval"
+    done
+
+    return 1
+}
+
+terminate_parent() {
     local ppid=$1
     local service=$2
-    local signal="-TERM"
 
-    if [[ "$FORCE" -eq 1 ]]; then
-        signal="-KILL"
+    if ! is_numeric "$ppid"; then
+        action_log "SKIP: PPID not numeric ($ppid)"
+        return 1
     fi
 
-    if kill "$signal" "$ppid" 2>/dev/null; then
-        echo "  → $signal an $ppid"
+    if [[ "$ppid" -lt 2 ]]; then
+        if [[ "$ppid" -eq 1 ]]; then
+            action_log "SKIP: PPID=1"
+        else
+            action_log "SKIP: PPID<2 ($ppid)"
+        fi
+        return 1
+    fi
+
+    if ! kill -0 "$ppid" 2>/dev/null; then
+        action_log "SKIP: Parent already exited (PPID=$ppid)"
+        return 1
+    fi
+
+    if kill -TERM "$ppid" 2>/dev/null; then
+        action_log "TERM sent to PPID=$ppid"
     else
         if kill -0 "$ppid" 2>/dev/null; then
-            echo "  → Parent $ppid konnte nicht beendet werden" >&2
+            action_log "FAIL: unable to send TERM to PPID=$ppid"
             return 1
         fi
-        echo "  → Parent $ppid nicht mehr existent"
+        action_log "SKIP: Parent already exited (PPID=$ppid)"
+        return 1
+    fi
+
+    if wait_for_exit "$ppid"; then
+        action_log "OK: Parent terminated (PPID=$ppid)"
+    else
+        action_log "WAIT: timeout reached (PPID=$ppid)"
+        if [[ "$FORCE" -eq 1 ]]; then
+            if kill -KILL "$ppid" 2>/dev/null; then
+                action_log "KILL sent to PPID=$ppid"
+            else
+                if kill -0 "$ppid" 2>/dev/null; then
+                    action_log "FAIL: unable to send KILL to PPID=$ppid"
+                    return 1
+                fi
+                action_log "SKIP: Parent already exited (PPID=$ppid)"
+                return 1
+            fi
+
+            if kill -0 "$ppid" 2>/dev/null; then
+                action_log "FAIL: Parent still alive (PPID=$ppid)"
+                return 1
+            fi
+            action_log "OK: Parent terminated (PPID=$ppid)"
+        else
+            action_log "FAIL: Parent still alive (PPID=$ppid)"
+            return 1
+        fi
+    fi
+
+    if parent_has_zombies "$ppid"; then
+        action_log "FAIL: Parent still has zombies (PPID=$ppid)"
+        return 1
     fi
 
     if [[ "$service" != "none" ]]; then
-        if sudo systemctl restart "$service" 2>/dev/null; then
-            echo "  → Service $service restarted"
+        if systemctl restart "$service" 2>/dev/null; then
+            action_log "Service restarted ($service)"
         else
-            echo "  → Service $service restart fehlgeschlagen" >&2
+            action_log "WARN: Service restart failed ($service)"
         fi
+    fi
+
+    return 0
+}
+
+process_parents() {
+    local failures=0
+    local ppid service
+
+    for ppid in "${PARENTS[@]}"; do
+        service=${PARENT_SERVICE[$ppid]-}
+        action_log "Handle parent PPID=$ppid"
+        if ! terminate_parent "$ppid" "$service"; then
+            failures=$((failures + 1))
+        fi
+    done
+
+    if [[ "$failures" -gt 0 ]]; then
+        return 2
     fi
 
     return 0
@@ -218,6 +338,7 @@ cmd_list() {
 
 cmd_auto() {
     collect_zombies
+    collect_parents
 
     local count=${#ZOMBIES[@]}
     if [[ "$count" -eq 0 ]]; then
@@ -229,24 +350,12 @@ cmd_auto() {
     print_zombies
     echo
 
-    local failures=0
-    for entry in "${ZOMBIES[@]}"; do
-        IFS=, read -r pid ppid _state _cmd service <<<"$entry"
-        echo "🔧 Behandle Zombie $pid (Parent: $ppid)"
-        if ! cleanup_parent "$ppid" "$service"; then
-            failures=$((failures + 1))
-        fi
-    done
-
-    if [[ "$failures" -gt 0 ]]; then
-        return 2
-    fi
-
-    return 0
+    process_parents
 }
 
 cmd_interactive() {
     collect_zombies
+    collect_parents
 
     local count=${#ZOMBIES[@]}
     if [[ "$count" -eq 0 ]]; then
@@ -271,18 +380,8 @@ cmd_interactive() {
 
     case "${choice,,}" in
         a)
-            local failures=0
-            for entry in "${ZOMBIES[@]}"; do
-                IFS=, read -r pid ppid _state _cmd service <<<"$entry"
-                echo "🔧 Zombie $pid → kill $ppid"
-                if ! cleanup_parent "$ppid" "$service"; then
-                    failures=$((failures + 1))
-                fi
-            done
-            if [[ "$failures" -gt 0 ]]; then
-                return 2
-            fi
-            return 0
+            process_parents
+            return $?
             ;;
         i)
             local index=1
@@ -305,6 +404,7 @@ cmd_interactive() {
             echo "🔧 Zombie $pid → kill $ppid"
             if [[ "$FORCE" -ne 1 ]]; then
                 local confirm
+                echo "Bitte bestätigen (y/N):"
                 if ! read -r confirm; then
                     echo "❌ Keine Bestätigung erhalten"
                     return 1
@@ -314,7 +414,7 @@ cmd_interactive() {
                     return 2
                 fi
             fi
-            if ! cleanup_parent "$ppid" "$service"; then
+            if ! terminate_parent "$ppid" "$service"; then
                 return 2
             fi
             return 0
