@@ -262,14 +262,14 @@
 
 ## 💾 Memory Integration
 
-### Issue #17 – Implement `--memory` auto-backend
+### Issue #14 – Implement `--memory` auto-backend
 
 **Labels:** `memory`, `v2.0`
 
 * Auto-detect: `smem → ps_mem → ps`
 * read-only
 
-### Issue #18 – Implement `--memory-zombies`
+### Issue #15 – Implement `--memory-zombies`
 
 * Zombie-Parents → RAM-Verbrauch
 * **Unique Feature**
@@ -282,7 +282,7 @@
 
 ## 🎮 TUI (htop-style)
 
-### Issue #20 – Minimal ANSI TUI (`--tui`)
+### Issue #16 – Minimal ANSI TUI (`--tui`)
 
 **Labels:** `tui`, `v2.0`
 
@@ -293,7 +293,7 @@
 
 ---
 
-### Issue #21 – Advanced htop-style TUI
+### Issue #17 – Advanced htop-style TUI
 
 **Labels:** `tui`, `v2.0`
 
@@ -304,7 +304,7 @@
 
 ---
 
-### Issue #22 – Unified Full-Check TUI
+### Issue #18 – Unified Full-Check TUI
 
 **Labels:** `tui`, `memory`, `v2.0`
 
@@ -316,11 +316,11 @@
 
 ## 🧪 Tests & Doku (v2)
 
-### Issue #23 – TUI safety & restore tests
+### Issue #19 – TUI safety & restore tests
 
 * Terminal state always restored
 
-### Issue #24 – Update Manpage + README for v2
+### Issue #20 – Update Manpage + README for v2
 
 * Memory + TUI Optionen
 * Feature comparison table
@@ -330,16 +330,16 @@
 
 # 🔵 **MAIBE FUTURE** Milestone: **v3.0.0 – Cross-Platform / Homebrew**
 
-### Issue #14 – Abstract platform-specific behavior
+### Issue #21 – Abstract platform-specific behavior
 
 * GNU vs BSD `ps`
 * systemd optional
 
-### Issue #15 – Homebrew formula
+### Issue #22 – Homebrew formula
 
 * `brew install checkzombies`
 
-### Issue #16 – macOS CI smoke tests
+### Issue #23 – macOS CI smoke tests
 
 ---
 
