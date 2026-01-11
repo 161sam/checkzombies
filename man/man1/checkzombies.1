@@ -1,0 +1,59 @@
+.TH CHECKZOMBIES 1 "Januar 2026" "checkzombies 2.0" "User Commands"
+.SH NAME
+checkzombies \- Findet und bereinigt Zombie-Prozesse
+.SH SYNOPSIS
+.B checkzombies
+.RB [ OPTION ]...
+.SH DESCRIPTION
+.B checkzombies
+sucht nach Zombie-Prozessen (Status Z/defunct), zeigt PID/PPID/Service-Informationen
+und bietet sichere Bereinigungsoptionen mit Signal-Eskalation und systemd-Support.
+
+.SH OPTIONS
+.TP
+.B \-h, \-\-help
+Zeigt diese Hilfe an
+.TP
+.B \-v, \-\-version
+Zeigt Versionsinformation
+.TP
+.B \-a, \-\-auto
+Automatisch alle Zombie-Parent-Prozesse terminieren
+.TP
+.B \-l, \-\-list
+Nur Zombies auflisten (keine Interaktion)
+.TP
+.B \-w, \-\-watch
+Kontinuierliche Überwachung alle 10 Sekunden
+.TP
+.B \-f, \-\-force
+Aggressives KILL ohne Bestätigung (GEFÄHRLICH!)
+
+.SH BEISPIELE
+.IP
+checkzombies
+.br
+Interaktives Menü mit Zombie-Auswahl
+.IP
+checkzombies --auto
+.br
+Automatische Bereinigung aller Zombies
+.IP
+checkzombies --list | less
+.br
+Nur Zombie-Liste als Text
+.IP
+watch -n 5 checkzombies --list
+.br
+Live-Überwachung alle 5 Sekunden
+
+.SH FILES
+/home/dev/checkzombies.log
+.br
+Logfile mit allen Aktionen
+
+.SH AUTHOR
+Dev@Getac <dev@getac.local>
+
+.SH COPYRIGHT
+Copyright (C) 2026 161sam

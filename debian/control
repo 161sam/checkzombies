@@ -1,0 +1,12 @@
+Source: checkzombies
+Section: utils
+Priority: optional
+Maintainer: 161sam
+Standards-Version: 4.6.0
+Homepage: https://github.com/161sam/checkzombies
+
+Package: checkzombies
+Architecture: all
+Depends: bash (>= 4.0)
+Description: Zombie Process Manager
+ Finds and safely cleans up zombie processes with systemd support

@@ -1,0 +1,81 @@
+#!/bin/bash
+# ════════════════════════════════START══════════════════════════════════════════
+# checkzombies - Zombie-Prozess-Überwachung & Cleanup
+# Features: Logging, systemd-Check, sichere Signal-Eskalation, Batch-Modus
+# ═══════════════════════════════════════════════════════════════════════════════
+
+LOGFILE="${HOME}/checkzombies.log"
+DATE=$(date '+%Y-%m-%d %H:%M:%S')
+
+log() {
+    echo "[$DATE] $*" | tee -a "$LOGFILE" >&2
+}
+
+# Zombies finden (nur echte Zombies, CSV-Format)
+find_zombies() {
+    ps aux | awk '$8=="Z+" || $8=="Z" {print $2","$3","$8","$11,$12}' | \
+    grep -v '^$' || true
+}
+
+main() {
+    local zombies count=0 zombie_list=""
+
+    # 1. Zombies finden
+    while IFS=, read -r pid ppid state cmd; do
+        [[ "$pid" =~ ^[0-9]+$ ]] || continue
+        service=$(systemctl status "$ppid" 2>/dev/null | grep "Main PID" | awk '{print $3}' | head -1 || echo "none")
+        zombie_list+="$pid,$ppid,$state,$cmd,$service"$'\n'
+        ((count++))
+    done < <(find_zombies)
+
+    # 2. KEINE Zombies = sauber beenden
+    if [ "$count" -eq 0 ]; then
+        echo "✓ Keine Zombie-Prozesse aktiv"
+        return 0
+    fi
+
+    # 3. Zombies ANZEIGEN
+    log "=== $count Zombie-Prozesse gefunden ==="
+    echo "PID    PPID   STAT  COMMAND                  SERVICE"
+    echo -n "$zombie_list" | while IFS=, read -r pid ppid state cmd service; do
+        printf "%-6s %-6s %-5s %-20s %s\n" "$pid" "$ppid" "$state" "$cmd" "$service"
+    done
+    echo
+
+    # 4. INTERAKTIV / AUTO
+    if [ "$1" = "--auto" ]; then
+        echo "$zombie_list" | while IFS=, read -r pid ppid state cmd service; do
+            echo "🔧 Behandle Zombie $pid (Parent: $ppid)"
+            kill -TERM "$ppid" 2>/dev/null && echo "  → SIGTERM an $ppid" || echo "  → Parent $ppid nicht mehr existent"
+            [[ "$service" != "none" ]] && sudo systemctl restart "$service" 2>/dev/null && echo "  → Service $service restarted"
+        done
+        return 0
+    fi
+
+    # INTERAKTIVES MENÜ
+    echo "Optionen:"
+    echo "  a) Alle Parents terminieren"
+    echo "  i) Einzeln bearbeiten"
+    echo "  q) Beenden"
+    read -r choice
+
+    case "${choice,,}" in
+        a)
+            echo "$zombie_list" | while IFS=, read -r pid ppid state cmd service; do
+                echo "🔧 Zombie $pid → kill $ppid"
+                kill -TERM "$ppid" 2>/dev/null || sudo kill -KILL "$ppid" 2>/dev/null
+                [[ "$service" != "none" ]] && sudo systemctl restart "$service" 2>/dev/null
+            done ;;
+        i)
+            echo "$zombie_list" | nl -nln | awk -F, '{print $1": PID "$2" <- PPID "$3" ("$5")"}'
+            read -r num
+            [[ "$num" =~ ^[0-9]+$ && "$num" -le "$count" ]] || { echo "❌ Ungültig"; return 1; }
+            zombie_line=$(echo "$zombie_list" | sed -n "${num}p")
+            IFS=, read -r pid ppid state cmd service <<< "$zombie_line"
+            echo "🔧 Zombie $pid → kill $ppid ($(systemctl status "$ppid" 2>/dev/null | head -1))"
+            read -r confirm && [[ "$confirm" =~ [Yy] ]] && kill -KILL "$ppid" 2>/dev/null ;;
+        *) echo "👋 Abgebrochen ($count Zombies)" ;;
+    esac
+}
+
+main "$@"
