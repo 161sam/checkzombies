@@ -29,6 +29,9 @@ Kontinuierliche \[:U00FC]berwachung alle 10 Sekunden
 .B \-f, \-\-force
 Erlaubt KILL nach TERM-Timeout (GEF\[:U00C4]HRLICH!). Nicht mit \-\-list kombinierbar.
 .TP
+.B \-\-no\-unicode
+Erzwingt ASCII-Ausgabe (keine Unicode-Symbole)
+.TP
 .B \-\-
 Ende der Optionen
 
@@ -55,7 +58,7 @@ Automatische Bereinigung aller Zombies
 .IP
 checkzombies --list | less
 .br
-Nur Zombie-Liste als Text
+Nur Zombie-Liste als Text (bei Pipe ohne Header und ohne Unicode)
 .IP
 checkzombies --watch
 .br
