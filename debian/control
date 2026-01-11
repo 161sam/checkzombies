@@ -1,12 +1,16 @@
 Source: checkzombies
-Section: utils
+Section: admin
 Priority: optional
-Maintainer: 161sam
-Standards-Version: 4.6.0
+Maintainer: CheckZombies Maintainers <maintainers@checkzombies.local>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
 Homepage: https://github.com/161sam/checkzombies
 
 Package: checkzombies
 Architecture: all
-Depends: bash (>= 4.0)
-Description: Zombie Process Manager
- Finds and safely cleans up zombie processes with systemd support
+Depends: ${misc:Depends}, bash (>= 4.0), procps
+Recommends: systemd
+Description: Zombie Process Manager (find & cleanup zombie processes)
+ checkzombies finds zombie processes, shows PID/PPID/service info, and offers
+ safe cleanup flows with standardized signal escalation.

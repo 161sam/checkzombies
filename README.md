@@ -7,8 +7,7 @@
 ## 🚀 Schnellstart
 
 ```bash
-curl -sSL https://github.com/161sam/checkzombies/releases/latest/download/checkzombies -o /usr/local/bin/
-chmod +x /usr/local/bin/checkzombies
+curl -fsSL https://raw.githubusercontent.com/161sam/checkzombies/main/scripts/install.sh | sudo REPO=161sam/checkzombies bash
 man checkzombies  # Man-Page!
 ```
 
@@ -30,20 +29,24 @@ man checkzombies  # Man-Page!
 
 ### Option A (empfohlen): Release Single-File (verifiziert)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install.sh | sudo REPO=<owner>/<repo> bash
+curl -fsSL https://raw.githubusercontent.com/161sam/checkzombies/main/scripts/install.sh | sudo REPO=161sam/checkzombies bash
 ````
 
 ### Option B: Release .deb (verifiziert)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install.sh | sudo REPO=<owner>/<repo> bash -s -- --method deb
+curl -fsSL https://raw.githubusercontent.com/161sam/checkzombies/main/scripts/install.sh | sudo REPO=161sam/checkzombies bash -s -- --method deb
 ```
 
 ### Version pinnen
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install.sh | sudo REPO=<owner>/<repo> bash -s -- --version v1.0.0
+curl -fsSL https://raw.githubusercontent.com/161sam/checkzombies/main/scripts/install.sh | sudo REPO=161sam/checkzombies bash -s -- --version v1.0.0
 ```
+
+Installer lädt Releases, prüft die `SHA256SUMS` und installiert nur bei gültiger Prüfsumme.
+
+Release-Assets enthalten: `checkzombies`, `.deb`, `.rpm`, `SHA256SUMS`.
 
 ## 🔐 APT Repo (signiert, ab v2.0)
 

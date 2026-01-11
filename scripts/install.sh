@@ -70,6 +70,19 @@ if [[ -z "$BIN_DIR" ]]; then
   BIN_DIR="${PREFIX}/bin"
 fi
 
+if [[ "$DRY_RUN" -eq 0 ]]; then
+  if [[ "$METHOD" == "deb" && "$(id -u)" -ne 0 ]]; then
+    echo "ERROR: --method deb requires root (sudo) to install packages." >&2
+    exit 1
+  fi
+  if [[ "$METHOD" == "single" && "$(id -u)" -ne 0 ]]; then
+    if [[ ! -w "$BIN_DIR" ]]; then
+      echo "ERROR: ${BIN_DIR} is not writable. Use sudo or set --prefix/--bin-dir." >&2
+      exit 1
+    fi
+  fi
+fi
+
 need_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: missing command: $1" >&2; exit 1; }; }
 need_cmd curl
 need_cmd sha256sum
@@ -125,12 +138,33 @@ fi
 
 # asset names
 single_name="checkzombies"
-deb_name="checkzombies_${ver}_all.deb"
 sums_name="SHA256SUMS"
 
 single_url="$(asset_url "$single_name")"
-deb_url="$(asset_url "$deb_name")"
 sums_url="$(asset_url "$sums_name")"
+
+deb_name="$(python3 - <<PY
+import json
+j=json.load(open("${rel_json}"))
+ver="${ver}"
+for a in j.get("assets",[]):
+  name=a.get("name","")
+  if name.startswith(f"checkzombies_{ver}") and name.endswith("_all.deb"):
+    print(name)
+    break
+PY
+)"
+
+deb_url="$(python3 - <<PY
+import json
+j=json.load(open("${rel_json}"))
+target="${deb_name}"
+for a in j.get("assets",[]):
+  if a.get("name")==target:
+    print(a.get("browser_download_url",""))
+    break
+PY
+)"
 
 if [[ -z "$sums_url" ]]; then
   echo "ERROR: SHA256SUMS asset not found in release (${tag_name})" >&2
@@ -175,8 +209,8 @@ fi
 
 if [[ "$METHOD" == "deb" ]]; then
   need_cmd dpkg
-  if [[ -z "$deb_url" ]]; then
-    echo "ERROR: asset '${deb_name}' not found in release (${tag_name})" >&2
+  if [[ -z "$deb_name" || -z "$deb_url" ]]; then
+    echo "ERROR: .deb asset not found in release (${tag_name})" >&2
     exit 1
   fi
   curl -fsSL "$deb_url" -o "${tmp}/${deb_name}"
