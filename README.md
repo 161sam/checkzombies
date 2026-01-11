@@ -57,6 +57,35 @@ echo "deb [signed-by=/usr/share/keyrings/checkzombies-archive-keyring.gpg] https
 sudo apt update && sudo apt install checkzombies
 ```
 
+## systemd (optional)
+
+Units sind optional und machen systemd **nicht** zur harten Abhängigkeit des CLI-Cores.
+
+**Installieren & aktivieren**
+```bash
+sudo ./scripts/systemd_install.sh --watch
+sudo ./scripts/systemd_install.sh --auto
+```
+
+**Status**
+```bash
+systemctl status checkzombies.service
+systemctl list-timers | grep checkzombies
+```
+
+**Logs**
+```bash
+journalctl -u checkzombies.service -f
+journalctl -u checkzombies-auto.service --since today
+```
+
+**Stop/Disable/Uninstall**
+```bash
+sudo ./scripts/systemd_install.sh --uninstall
+```
+
+Hinweis: Root ist erforderlich (Prozesse terminieren + Services verwalten).
+
 ## 🔚 Exit-Codes
 
 - `0`: keine Zombies gefunden oder erfolgreich bereinigt

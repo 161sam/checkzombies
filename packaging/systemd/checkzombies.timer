@@ -1,0 +1,11 @@
+[Unit]
+Description=checkzombies auto cleanup timer
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=checkzombies-auto.service
+
+[Install]
+WantedBy=timers.target
