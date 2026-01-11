@@ -1,0 +1,26 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+if [[ "$#" -ge 2 && "$1" == "-eo" && "$2" == "pid=,ppid=,stat=,comm=" ]]; then
+  if [[ -n "${CHECKZOMBIES_MOCK_PS_FILE:-}" && -f "$CHECKZOMBIES_MOCK_PS_FILE" ]]; then
+    cat "$CHECKZOMBIES_MOCK_PS_FILE"
+    exit 0
+  fi
+
+  case "${CHECKZOMBIES_MOCK_PS_MODE:-empty}" in
+    zombies)
+      printf '%s\n' "200 2 Zs zombieproc"
+      ;;
+    ppid1)
+      printf '%s\n' "201 1 Zs initzombie"
+      ;;
+    empty)
+      ;;
+    *)
+      ;;
+  esac
+  exit 0
+fi
+
+exec /bin/ps "$@"
