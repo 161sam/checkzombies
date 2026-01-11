@@ -1,6 +1,6 @@
 # checkzombies 🧟‍♂️ Zombie Process Manager
 
-[![Release](https://img.shields.io/github/v/release/161sam/checkzombies)](https://github.com/devgetac/checkzombies/releases)
+[![Release](https://img.shields.io/github/v/release/161sam/checkzombies)](https://github.com/161sam/checkzombies/releases)
 
 **Linux-Tool zum Finden und sicheren Bereinigen von Zombie-Prozessen**
 
