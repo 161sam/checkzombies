@@ -1,0 +1,4 @@
+bin/checkzombies usr/bin/
+packaging/systemd/checkzombies.service lib/systemd/system/
+packaging/systemd/checkzombies-auto.service lib/systemd/system/
+packaging/systemd/checkzombies.timer lib/systemd/system/
