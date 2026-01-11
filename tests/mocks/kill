@@ -1,0 +1,43 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+state_file=${CHECKZOMBIES_KILL_STATE:-}
+
+if [[ -z "$state_file" ]]; then
+  printf '%s\n' "mock kill: CHECKZOMBIES_KILL_STATE not set" >&2
+  exit 1
+fi
+
+touch "$state_file"
+
+signal="TERM"
+if [[ "${1:-}" == -* ]]; then
+  signal="${1#-}"
+  shift
+fi
+
+pid=${1:-}
+if [[ -z "$pid" ]]; then
+  exit 1
+fi
+
+case "$signal" in
+  0)
+    if grep -qx "$pid" "$state_file"; then
+      exit 0
+    fi
+    exit 1
+    ;;
+  TERM|KILL)
+    if grep -qx "$pid" "$state_file"; then
+      grep -vx "$pid" "$state_file" > "${state_file}.tmp"
+      mv "${state_file}.tmp" "$state_file"
+      exit 0
+    fi
+    exit 1
+    ;;
+  *)
+    exit 1
+    ;;
+esac

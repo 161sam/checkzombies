@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+
+case "${1:-}" in
+  status)
+    exit 1
+    ;;
+  restart)
+    exit 0
+    ;;
+  *)
+    exit 1
+    ;;
+esac

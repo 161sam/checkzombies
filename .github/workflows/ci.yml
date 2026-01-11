@@ -1,10 +1,16 @@
 name: CI
 on: [push, pull_request]
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - run: sudo apt install bats-core shellcheck
-    - run: make test lint
-    - run: make deb    # Debian Package bauen
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats shellcheck
+      - name: ShellCheck
+        run: shellcheck -x bin/checkzombies scripts/*.sh
+      - name: Bats tests
+        run: bats tests/*.bats
