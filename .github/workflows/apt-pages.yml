@@ -1,0 +1,83 @@
+name: APT Repo (signed) to GitHub Pages
+
+on:
+  push:
+    tags:
+      - 'v2.*'
+      - 'v3.*'
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build-apt:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg-dev apt-utils gnupg gzip
+
+      - name: Import GPG key
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+        run: |
+          echo "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          # Optional trust setup (simple)
+          gpg --list-secret-keys --keyid-format=long
+          # Configure pinentry loopback for non-interactive signing
+          mkdir -p ~/.gnupg
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpgconf --kill gpg-agent || true
+
+      - name: Build deb + repo
+        env:
+          APT_GPG_KEY_ID: ${{ secrets.APT_GPG_KEY_ID }}
+          APT_CODENAME: stable
+        run: |
+          make deb
+          # Export public keyring for users
+          mkdir -p docs/apt
+          gpg --batch --yes --output "docs/apt/checkzombies-archive-keyring.gpg" --export "$APT_GPG_KEY_ID"
+          # Build repo into docs/apt
+          ver="$(git describe --tags --abbrev=0 | sed 's/^v//')"
+          ./scripts/apt_repo_build.sh "$ver" "dist/checkzombies_${ver}_all.deb" "docs/apt"
+
+      - name: Publish docs/apt to gh-pages
+        run: |
+          # Publish only APT repo content to gh-pages under /apt
+          git fetch origin gh-pages || true
+          rm -rf /tmp/gh-pages
+          mkdir -p /tmp/gh-pages
+          if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+            git worktree add /tmp/gh-pages gh-pages
+          else
+            git worktree add /tmp/gh-pages --detach
+            (cd /tmp/gh-pages && git checkout --orphan gh-pages)
+          fi
+
+          mkdir -p /tmp/gh-pages/apt
+          rsync -a --delete docs/apt/ /tmp/gh-pages/apt/
+
+          (cd /tmp/gh-pages && \
+            git add apt && \
+            git commit -m "apt repo: ${GITHUB_REF_NAME}" || true && \
+            git push origin HEAD:gh-pages)
+
+      - name: Print install instructions
+        env:
+          OWNER_REPO: ${{ github.repository }}
+        run: |
+          echo "APT repo published to: https://${OWNER_REPO%%/*}.github.io/${OWNER_REPO##*/}/apt"
+          echo ""
+          echo "Install (example):"
+          echo "  curl -fsSL https://${OWNER_REPO%%/*}.github.io/${OWNER_REPO##*/}/apt/checkzombies-archive-keyring.gpg | sudo tee /usr/share/keyrings/checkzombies-archive-keyring.gpg >/dev/null"
+          echo "  echo \"deb [signed-by=/usr/share/keyrings/checkzombies-archive-keyring.gpg] https://${OWNER_REPO%%/*}.github.io/${OWNER_REPO##*/}/apt stable main\" | sudo tee /etc/apt/sources.list.d/checkzombies.list"
+          echo "  sudo apt update && sudo apt install checkzombies"
