@@ -15,6 +15,15 @@ WAIT_SECONDS=3
 MODE=""
 FORCE=0
 WATCH_INTERVAL=$WATCH_INTERVAL_DEFAULT
+NO_UNICODE=0
+OUTPUT_TTY=0
+UNICODE=0
+
+OK_SYMBOL="[OK]"
+WARN_SYMBOL="[!]"
+INFO_SYMBOL="[i]"
+FAIL_SYMBOL="[ERR]"
+ZOMBIE_SYMBOL="[Z]"
 
 action_log() {
     local now
@@ -45,12 +54,14 @@ Modi (genau einer):
 
 Optionen:
   -f, --force      Erlaubt KILL nach TERM-Timeout (nicht mit --list)
+  --no-unicode     Erzwingt ASCII-Ausgabe (keine Unicode-Symbole)
   -h, --help       Hilfe anzeigen
   -v, --version    Version anzeigen
   --               Ende der Optionen
 
 Hinweis: Ohne Modus wird bei TTY das interaktive Menü geöffnet.
-Bei non-TTY wird automatisch --list verwendet.
+Bei non-TTY wird automatisch --list verwendet. Ausgabe ist dann ASCII,
+ohne Header und ohne interaktive Prompts.
 
 Exit-Codes: 0 = keine Zombies/erfolgreich bereinigt, 1 = Fehler,
 2 = Zombies gefunden, aber nicht bereinigt.
@@ -90,6 +101,9 @@ parse_args() {
             -f|--force)
                 FORCE=1
                 ;;
+            --no-unicode|--ascii)
+                NO_UNICODE=1
+                ;;
             --)
                 shift
                 break
@@ -125,6 +139,42 @@ parse_args() {
 
     if [[ "$MODE" == "watch" && "$FORCE" -eq 1 ]]; then
         echo "Hinweis: --force hat im Watch-Modus keine Wirkung." >&2
+    fi
+}
+
+setup_output_mode() {
+    local locale_setting
+    OUTPUT_TTY=0
+    if [[ -t 1 ]]; then
+        OUTPUT_TTY=1
+    fi
+
+    UNICODE=0
+    if [[ "$NO_UNICODE" -eq 1 ]]; then
+        UNICODE=0
+    elif [[ "$OUTPUT_TTY" -eq 0 ]]; then
+        UNICODE=0
+    elif [[ "${TERM:-}" == "dumb" ]]; then
+        UNICODE=0
+    else
+        locale_setting="${LC_ALL:-${LANG:-}}"
+        if [[ "$locale_setting" == *"UTF-8"* || "$locale_setting" == *"utf8"* ]]; then
+            UNICODE=1
+        fi
+    fi
+
+    if [[ "$UNICODE" -eq 1 ]]; then
+        OK_SYMBOL="✓"
+        WARN_SYMBOL="⚠"
+        INFO_SYMBOL="ℹ"
+        FAIL_SYMBOL="✖"
+        ZOMBIE_SYMBOL="🧟"
+    else
+        OK_SYMBOL="[OK]"
+        WARN_SYMBOL="[!]"
+        INFO_SYMBOL="[i]"
+        FAIL_SYMBOL="[ERR]"
+        ZOMBIE_SYMBOL="[Z]"
     fi
 }
 
@@ -188,11 +238,18 @@ collect_parents() {
 }
 
 print_zombies() {
-    echo "PID    PPID   STAT  COMMAND                  SERVICE"
-    for entry in "${ZOMBIES[@]}"; do
-        IFS=, read -r pid ppid state cmd service <<<"$entry"
-        printf "%-6s %-6s %-5s %-20s %s\n" "$pid" "$ppid" "$state" "$cmd" "$service"
-    done
+    if [[ "$OUTPUT_TTY" -eq 1 ]]; then
+        echo "PID    PPID   STAT  COMMAND                  SERVICE"
+        for entry in "${ZOMBIES[@]}"; do
+            IFS=, read -r pid ppid state cmd service <<<"$entry"
+            printf "%-6s %-6s %-5s %-20s %s\n" "$pid" "$ppid" "$state" "$cmd" "$service"
+        done
+    else
+        for entry in "${ZOMBIES[@]}"; do
+            IFS=, read -r pid ppid state cmd service <<<"$entry"
+            printf "%s\t%s\t%s\t%s\t%s\n" "$pid" "$ppid" "$state" "$cmd" "$service"
+        done
+    fi
 }
 
 parent_has_zombies() {
@@ -325,13 +382,15 @@ cmd_list() {
 
     local count=${#ZOMBIES[@]}
     if [[ "$count" -eq 0 ]]; then
-        echo "✓ Keine Zombie-Prozesse aktiv"
+        echo "${OK_SYMBOL} Keine Zombie-Prozesse aktiv"
         return 0
     fi
 
     action_log "=== $count Zombie-Prozesse gefunden ==="
     print_zombies
-    echo
+    if [[ "$OUTPUT_TTY" -eq 1 ]]; then
+        echo
+    fi
 
     return 2
 }
@@ -342,92 +401,119 @@ cmd_auto() {
 
     local count=${#ZOMBIES[@]}
     if [[ "$count" -eq 0 ]]; then
-        echo "✓ Keine Zombie-Prozesse aktiv"
+        echo "${OK_SYMBOL} Keine Zombie-Prozesse aktiv"
         return 0
     fi
 
     action_log "=== $count Zombie-Prozesse gefunden ==="
     print_zombies
-    echo
+    if [[ "$OUTPUT_TTY" -eq 1 ]]; then
+        echo
+    fi
 
     process_parents
 }
 
+cleanup_terminal() {
+    if [[ -t 0 ]]; then
+        stty echo 2>/dev/null || true
+    fi
+    if [[ -t 1 ]]; then
+        printf '\n'
+    fi
+}
+
 cmd_interactive() {
-    collect_zombies
-    collect_parents
+    trap cleanup_terminal EXIT INT TERM
 
-    local count=${#ZOMBIES[@]}
-    if [[ "$count" -eq 0 ]]; then
-        echo "✓ Keine Zombie-Prozesse aktiv"
-        return 0
-    fi
+    while true; do
+        collect_zombies
+        collect_parents
 
-    action_log "=== $count Zombie-Prozesse gefunden ==="
-    print_zombies
-    echo
+        local count=${#ZOMBIES[@]}
+        if [[ "$count" -eq 0 ]]; then
+            echo "${OK_SYMBOL} Keine Zombie-Prozesse aktiv"
+            return 0
+        fi
 
-    echo "Optionen:"
-    echo "  a) Alle Parents terminieren"
-    echo "  i) Einzeln bearbeiten"
-    echo "  q) Beenden"
+        action_log "=== $count Zombie-Prozesse gefunden ==="
+        print_zombies
+        echo
 
-    local choice
-    if ! read -r choice; then
-        echo "❌ Keine Eingabe erhalten"
-        return 1
-    fi
+        echo "Optionen:"
+        echo "  r) Neu laden"
+        echo "  a) Alle Parents terminieren"
+        echo "  i) Einzeln bearbeiten"
+        echo "  q) Beenden"
 
-    case "${choice,,}" in
-        a)
-            process_parents
-            return $?
-            ;;
-        i)
-            local index=1
-            for entry in "${ZOMBIES[@]}"; do
-                IFS=, read -r pid ppid _state cmd service <<<"$entry"
-                echo "$index: PID $pid <- PPID $ppid ($cmd)"
-                index=$((index + 1))
-            done
-            local num
-            if ! read -r num; then
-                echo "❌ Keine Auswahl erhalten"
-                return 1
-            fi
-            if [[ ! "$num" =~ ^[0-9]+$ || "$num" -lt 1 || "$num" -gt "$count" ]]; then
-                echo "❌ Ungültig"
-                return 1
-            fi
-            local zombie_line=${ZOMBIES[$((num - 1))]}
-            IFS=, read -r pid ppid _state cmd service <<<"$zombie_line"
-            echo "🔧 Zombie $pid → kill $ppid"
-            if [[ "$FORCE" -ne 1 ]]; then
-                local confirm
-                echo "Bitte bestätigen (y/N):"
-                if ! read -r confirm; then
-                    echo "❌ Keine Bestätigung erhalten"
+        local choice
+        if ! read -r choice; then
+            echo "${FAIL_SYMBOL} Keine Eingabe erhalten"
+            return 1
+        fi
+
+        case "${choice,,}" in
+            r)
+                continue
+                ;;
+            a)
+                local status=0
+                process_parents || status=$?
+                if [[ "$status" -eq 1 ]]; then
                     return 1
                 fi
-                if [[ ! "$confirm" =~ [Yy] ]]; then
-                    echo "👋 Abgebrochen ($count Zombies)"
-                    return 2
+                if [[ "$status" -eq 2 ]]; then
+                    echo "${WARN_SYMBOL} Aktion nicht vollständig. Neu laden mit r."
+                else
+                    echo "${INFO_SYMBOL} Aktion abgeschlossen. Neu laden mit r."
                 fi
-            fi
-            if ! terminate_parent "$ppid" "$service"; then
+                ;;
+            i)
+                local index=1
+                for entry in "${ZOMBIES[@]}"; do
+                    IFS=, read -r pid ppid _state cmd service <<<"$entry"
+                    echo "$index: PID $pid <- PPID $ppid ($cmd)"
+                    index=$((index + 1))
+                done
+                local num
+                if ! read -r num; then
+                    echo "${FAIL_SYMBOL} Keine Auswahl erhalten"
+                    return 1
+                fi
+                if [[ ! "$num" =~ ^[0-9]+$ || "$num" -lt 1 || "$num" -gt "$count" ]]; then
+                    echo "${FAIL_SYMBOL} Ungültig"
+                    return 1
+                fi
+                local zombie_line=${ZOMBIES[$((num - 1))]}
+                IFS=, read -r pid ppid _state cmd service <<<"$zombie_line"
+                echo "${ZOMBIE_SYMBOL} Zombie $pid -> kill $ppid"
+                if [[ "$FORCE" -ne 1 ]]; then
+                    local confirm
+                    echo "Bitte bestätigen (y/N):"
+                    if ! read -r confirm; then
+                        echo "${FAIL_SYMBOL} Keine Bestätigung erhalten"
+                        return 1
+                    fi
+                    if [[ ! "$confirm" =~ [Yy] ]]; then
+                        echo "${INFO_SYMBOL} Abgebrochen ($count Zombies)"
+                        continue
+                    fi
+                fi
+                if ! terminate_parent "$ppid" "$service"; then
+                    echo "${WARN_SYMBOL} Aktion nicht vollständig"
+                else
+                    echo "${OK_SYMBOL} Aktion abgeschlossen"
+                fi
+                ;;
+            q)
+                echo "${INFO_SYMBOL} Abgebrochen ($count Zombies)"
                 return 2
-            fi
-            return 0
-            ;;
-        q)
-            echo "👋 Abgebrochen ($count Zombies)"
-            return 2
-            ;;
-        *)
-            echo "❌ Ungültig"
-            return 1
-            ;;
-    esac
+                ;;
+            *)
+                echo "${FAIL_SYMBOL} Ungültig"
+                ;;
+        esac
+    done
 }
 
 cmd_watch() {
@@ -448,6 +534,7 @@ cmd_watch() {
 
 main() {
     parse_args "$@"
+    setup_output_mode
 
     case "$MODE" in
         list)
