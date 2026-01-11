@@ -8,7 +8,16 @@ set -euo pipefail
 IFS=$'\n\t'
 
 VERSION="2.0"
-LOGFILE="${HOME}/checkzombies.log"
+LOG_FILE_DEFAULT="${HOME}/checkzombies.log"
+LOG_FILE="${CHECKZOMBIES_LOG_FILE:-$LOG_FILE_DEFAULT}"
+LOG_LEVEL_DEFAULT="INFO"
+LOG_LEVEL="${CHECKZOMBIES_LOG_LEVEL:-$LOG_LEVEL_DEFAULT}"
+LOG_SYSLOG=0
+if [[ "${CHECKZOMBIES_LOG_SYSLOG:-}" == "1" ]]; then
+    LOG_SYSLOG=1
+fi
+LOG_TO_FILE=1
+LOG_FILE_WRITE_FAILED=0
 WATCH_INTERVAL_DEFAULT=10
 WAIT_SECONDS=3
 
@@ -25,10 +34,114 @@ INFO_SYMBOL="[i]"
 FAIL_SYMBOL="[ERR]"
 ZOMBIE_SYMBOL="[Z]"
 
-action_log() {
+normalize_log_level() {
+    local level=${1^^}
+    case "$level" in
+        DEBUG|INFO|WARN|ERROR)
+            echo "$level"
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+log_level_num() {
+    case "$1" in
+        DEBUG) echo 0 ;;
+        INFO) echo 1 ;;
+        WARN) echo 2 ;;
+        ERROR) echo 3 ;;
+        *) return 1 ;;
+    esac
+}
+
+log_should_emit() {
+    local level=$1
+    local level_num threshold
+    level_num=$(log_level_num "$level") || return 1
+    threshold=$(log_level_num "$LOG_LEVEL") || return 1
+    [[ "$level_num" -ge "$threshold" ]]
+}
+
+log_emit() {
+    local level=$1
+    shift
+    local msg=$1
+    shift
+    log_should_emit "$level" || return 0
     local now
     now=$(date '+%Y-%m-%d %H:%M:%S')
-    echo "[$now] $*" | tee -a "$LOGFILE" >&2 || true
+    local line
+    line="[$now] level=$level msg=\"$msg\""
+    if [[ $# -gt 0 ]]; then
+        line="$line $*"
+    fi
+
+    if [[ "$LOG_TO_FILE" -eq 1 ]]; then
+        if ! printf '%s\n' "$line" >> "$LOG_FILE" 2>/dev/null; then
+            LOG_TO_FILE=0
+            if [[ "$LOG_FILE_WRITE_FAILED" -eq 0 ]]; then
+                LOG_FILE_WRITE_FAILED=1
+                printf '[%s] level=WARN msg="log file not writable, falling back to stderr only" path="%s"\n' \
+                    "$now" "$LOG_FILE" >&2
+            fi
+        fi
+    fi
+
+    if [[ "$LOG_SYSLOG" -eq 1 ]]; then
+        logger -t checkzombies -- "$line" 2>/dev/null || true
+    fi
+
+    printf '%s\n' "$line" >&2
+}
+
+log_debug() {
+    log_emit "DEBUG" "$@"
+}
+
+log_info() {
+    log_emit "INFO" "$@"
+}
+
+log_warn() {
+    log_emit "WARN" "$@"
+}
+
+log_error() {
+    log_emit "ERROR" "$@"
+}
+
+log_init() {
+    local normalized
+    if ! normalized=$(normalize_log_level "$LOG_LEVEL"); then
+        printf '[%s] level=WARN msg="invalid log level, defaulting to INFO" value="%s"\n' \
+            "$(date '+%Y-%m-%d %H:%M:%S')" "$LOG_LEVEL" >&2
+        LOG_LEVEL="INFO"
+    else
+        LOG_LEVEL=$normalized
+    fi
+
+    if [[ "$LOG_TO_FILE" -eq 1 ]]; then
+        if [[ -z "$LOG_FILE" ]]; then
+            LOG_TO_FILE=0
+            printf '[%s] level=WARN msg="log file path empty, disabling file logging"\n' \
+                "$(date '+%Y-%m-%d %H:%M:%S')" >&2
+        elif ! { : >> "$LOG_FILE"; } 2>/dev/null; then
+            LOG_TO_FILE=0
+            printf '[%s] level=WARN msg="log file not writable, falling back to stderr" path="%s"\n' \
+                "$(date '+%Y-%m-%d %H:%M:%S')" "$LOG_FILE" >&2
+        fi
+    fi
+
+    if [[ "$LOG_SYSLOG" -eq 1 ]]; then
+        if ! command -v logger >/dev/null 2>&1; then
+            LOG_SYSLOG=0
+            printf '[%s] level=WARN msg="logger not found, disabling syslog logging"\n' \
+                "$(date '+%Y-%m-%d %H:%M:%S')" >&2
+        fi
+    fi
 }
 
 show_version() {
@@ -55,6 +168,10 @@ Modi (genau einer):
 Optionen:
   -f, --force      Erlaubt KILL nach TERM-Timeout (nicht mit --list)
   --no-unicode     Erzwingt ASCII-Ausgabe (keine Unicode-Symbole)
+  --log-file PATH  Logdatei setzen (Default: $HOME/checkzombies.log)
+  --no-log-file    Datei-Logging deaktivieren
+  --log-syslog     Zusätzlich in syslog/journald loggen (via logger)
+  --log-level LVL  Log-Level (DEBUG, INFO, WARN, ERROR)
   -h, --help       Hilfe anzeigen
   -v, --version    Version anzeigen
   --               Ende der Optionen
@@ -65,6 +182,11 @@ ohne Header und ohne interaktive Prompts.
 
 Exit-Codes: 0 = keine Zombies/erfolgreich bereinigt, 1 = Fehler,
 2 = Zombies gefunden, aber nicht bereinigt.
+
+Umgebungsvariablen:
+  CHECKZOMBIES_LOG_FILE    Default-Logdatei überschreiben
+  CHECKZOMBIES_LOG_LEVEL   Default-Log-Level setzen
+  CHECKZOMBIES_LOG_SYSLOG  Syslog-Logging aktivieren (1=ja)
 HELP
 }
 
@@ -103,6 +225,31 @@ parse_args() {
                 ;;
             --no-unicode|--ascii)
                 NO_UNICODE=1
+                ;;
+            --log-file)
+                shift
+                if [[ $# -eq 0 || -z "$1" ]]; then
+                    echo "Error: --log-file requires a path argument." >&2
+                    short_usage
+                    exit 1
+                fi
+                LOG_FILE=$1
+                LOG_TO_FILE=1
+                ;;
+            --no-log-file)
+                LOG_TO_FILE=0
+                ;;
+            --log-syslog)
+                LOG_SYSLOG=1
+                ;;
+            --log-level)
+                shift
+                if [[ $# -eq 0 || -z "$1" ]]; then
+                    echo "Error: --log-level requires a value." >&2
+                    short_usage
+                    exit 1
+                fi
+                LOG_LEVEL=$1
                 ;;
             --)
                 shift
@@ -286,72 +433,73 @@ terminate_parent() {
     local service=$2
 
     if ! is_numeric "$ppid"; then
-        action_log "SKIP: PPID not numeric ($ppid)"
+        log_warn "skip parent not numeric" ppid="$ppid"
         return 1
     fi
 
     if [[ "$ppid" -lt 2 ]]; then
         if [[ "$ppid" -eq 1 ]]; then
-            action_log "SKIP: PPID=1"
+            log_warn "skip parent ppid=1" ppid="$ppid"
         else
-            action_log "SKIP: PPID<2 ($ppid)"
+            log_warn "skip parent ppid<2" ppid="$ppid"
         fi
         return 1
     fi
 
     if ! kill -0 "$ppid" 2>/dev/null; then
-        action_log "SKIP: Parent already exited (PPID=$ppid)"
+        log_warn "skip parent already exited" ppid="$ppid"
         return 1
     fi
 
     if kill -TERM "$ppid" 2>/dev/null; then
-        action_log "TERM sent to PPID=$ppid"
+        log_info "signal sent" signal="TERM" ppid="$ppid"
     else
         if kill -0 "$ppid" 2>/dev/null; then
-            action_log "FAIL: unable to send TERM to PPID=$ppid"
+            log_error "unable to send signal" signal="TERM" ppid="$ppid"
             return 1
         fi
-        action_log "SKIP: Parent already exited (PPID=$ppid)"
+        log_warn "skip parent already exited" ppid="$ppid"
         return 1
     fi
 
     if wait_for_exit "$ppid"; then
-        action_log "OK: Parent terminated (PPID=$ppid)"
+        log_info "parent terminated" ppid="$ppid"
     else
-        action_log "WAIT: timeout reached (PPID=$ppid)"
+        log_warn "wait timeout reached" ppid="$ppid" wait_seconds="$WAIT_SECONDS"
         if [[ "$FORCE" -eq 1 ]]; then
             if kill -KILL "$ppid" 2>/dev/null; then
-                action_log "KILL sent to PPID=$ppid"
+                log_warn "signal sent" signal="KILL" ppid="$ppid"
             else
                 if kill -0 "$ppid" 2>/dev/null; then
-                    action_log "FAIL: unable to send KILL to PPID=$ppid"
+                    log_error "unable to send signal" signal="KILL" ppid="$ppid"
                     return 1
                 fi
-                action_log "SKIP: Parent already exited (PPID=$ppid)"
+                log_warn "skip parent already exited" ppid="$ppid"
                 return 1
             fi
 
             if kill -0 "$ppid" 2>/dev/null; then
-                action_log "FAIL: Parent still alive (PPID=$ppid)"
+                log_error "parent still alive after KILL" ppid="$ppid"
                 return 1
             fi
-            action_log "OK: Parent terminated (PPID=$ppid)"
+            log_info "parent terminated" ppid="$ppid"
         else
-            action_log "FAIL: Parent still alive (PPID=$ppid)"
+            log_error "parent still alive after TERM" ppid="$ppid"
             return 1
         fi
     fi
 
     if parent_has_zombies "$ppid"; then
-        action_log "FAIL: Parent still has zombies (PPID=$ppid)"
+        log_error "parent still has zombies" ppid="$ppid"
         return 1
     fi
 
     if [[ "$service" != "none" ]]; then
+        log_info "service restart attempt" service="$service" ppid="$ppid"
         if systemctl restart "$service" 2>/dev/null; then
-            action_log "Service restarted ($service)"
+            log_info "service restarted" service="$service"
         else
-            action_log "WARN: Service restart failed ($service)"
+            log_warn "service restart failed" service="$service"
         fi
     fi
 
@@ -364,7 +512,7 @@ process_parents() {
 
     for ppid in "${PARENTS[@]}"; do
         service=${PARENT_SERVICE[$ppid]-}
-        action_log "Handle parent PPID=$ppid"
+        log_info "processing parent" ppid="$ppid" service="$service"
         if ! terminate_parent "$ppid" "$service"; then
             failures=$((failures + 1))
         fi
@@ -381,12 +529,13 @@ cmd_list() {
     collect_zombies
 
     local count=${#ZOMBIES[@]}
+    log_info "zombie detection" mode="list" count="$count"
     if [[ "$count" -eq 0 ]]; then
         echo "${OK_SYMBOL} Keine Zombie-Prozesse aktiv"
         return 0
     fi
 
-    action_log "=== $count Zombie-Prozesse gefunden ==="
+    log_info "zombies found" count="$count"
     print_zombies
     if [[ "$OUTPUT_TTY" -eq 1 ]]; then
         echo
@@ -400,12 +549,13 @@ cmd_auto() {
     collect_parents
 
     local count=${#ZOMBIES[@]}
+    log_info "zombie detection" mode="auto" count="$count"
     if [[ "$count" -eq 0 ]]; then
         echo "${OK_SYMBOL} Keine Zombie-Prozesse aktiv"
         return 0
     fi
 
-    action_log "=== $count Zombie-Prozesse gefunden ==="
+    log_info "zombies found" count="$count"
     print_zombies
     if [[ "$OUTPUT_TTY" -eq 1 ]]; then
         echo
@@ -431,12 +581,13 @@ cmd_interactive() {
         collect_parents
 
         local count=${#ZOMBIES[@]}
+        log_info "zombie detection" mode="interactive" count="$count"
         if [[ "$count" -eq 0 ]]; then
             echo "${OK_SYMBOL} Keine Zombie-Prozesse aktiv"
             return 0
         fi
 
-        action_log "=== $count Zombie-Prozesse gefunden ==="
+        log_info "zombies found" count="$count"
         print_zombies
         echo
 
@@ -507,10 +658,12 @@ cmd_interactive() {
                 ;;
             q)
                 echo "${INFO_SYMBOL} Abgebrochen ($count Zombies)"
+                log_info "user quit" mode="interactive" count="$count"
                 return 2
                 ;;
             *)
                 echo "${FAIL_SYMBOL} Ungültig"
+                log_warn "invalid menu selection" input="$choice"
                 ;;
         esac
     done
@@ -535,6 +688,8 @@ cmd_watch() {
 main() {
     parse_args "$@"
     setup_output_mode
+    log_init
+    log_info "checkzombies start" mode="$MODE" force="$FORCE" watch_interval="$WATCH_INTERVAL" log_level="$LOG_LEVEL"
 
     case "$MODE" in
         list)
