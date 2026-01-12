@@ -2,9 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/161sam/checkzombies)](https://github.com/161sam/checkzombies/releases)
 
-**erstelle eine passende onliner beschreibung für das projekt, die ich anstatt "little terminal tool, find and clean up zombie-prozesses"  in der github repo beschreibung verwenden kann.
-
-****checkzombies** automatisiert die Erkennung und Bereinigung von Zombie-Prozessen auf Linux-Systemen. Unterstützt systemd-Services, mehrstufiges Cleanup (SIGCHLD→TERM→KILL), verifizierte .deb-Pakete, optionale Timer und umfassende Logging-Funktionen mit klaren Exit-Codes.**
+**checkzombies** automatisiert die Erkennung und Bereinigung von **Zombie-Prozessen** auf Linux-Systemen. Unterstützt systemd-Services, mehrstufiges Cleanup (SIGCHLD→TERM→KILL), verifizierte .deb-Pakete, optionale Timer und umfassende Logging-Funktionen mit klaren Exit-Codes.
 
 ## 🚀 Schnellstart
 
